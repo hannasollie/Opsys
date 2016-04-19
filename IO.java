@@ -17,17 +17,6 @@ public class IO {
         this.statistics = statistics;
     }
 
-    public Event addProcess(Process process, long clock) {
-        // Add the process to the IO queue.
-        ioQueue.insert(process);
-
-        // If the IO is not currently busy, start the IO access at once.
-        if (! isIoBusy())
-            return startIoAccess(clock);
-
-        return null;
-    }
-
     private Process popIoQueue(){
         return (Process) ioQueue.removeNext();
     }
