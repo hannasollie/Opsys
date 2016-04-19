@@ -1,3 +1,8 @@
+import com.sun.xml.internal.ws.policy.privateutil.PolicyUtils;
+import jdk.nashorn.internal.objects.Global;
+import sun.plugin2.gluegen.runtime.CPU;
+
+import javax.xml.bind.annotation.XmlElementDecl;
 import java.io.*;
 
 /**
@@ -21,6 +26,7 @@ public class Simulator implements Constants
 	private long avgArrivalInterval;
 	// Add member variables as needed
 	private CPU cpu;
+	private IO io;
 
 	/**
 	 * Constructs a scheduling simulator with the given parameters.
@@ -43,8 +49,9 @@ public class Simulator implements Constants
 		eventQueue = new EventQueue();
 		memory = new Memory(memoryQueue, memorySize, statistics);
 		clock = 0;
-		//this.cpu = cpu;
 		// Add code as needed
+		this.cpu = new CPU(cpuQueue,gui,statistics,maxCpuTime);
+		this.io = new IO(ioQueue, statistics, gui, avgIoTime);
     }
 
     /**
@@ -69,6 +76,8 @@ public class Simulator implements Constants
 			// Let the memory unit and the GUI know that time has passed
 			memory.timePassed(timeDifference);
 			gui.timePassed(timeDifference);
+			io.timeDifference
+			cpu.
 			// Deal with the event
 			if (clock < simulationLength) {
 				processEvent(event);
@@ -133,19 +142,25 @@ public class Simulator implements Constants
 		while(p != null) {
 			
 			// TODO: Add this process to the CPU queue!
-			cpu.addProcessToQueue(p);
 			// Also add new events to the event queue if needed
 
 			// Since we haven't implemented the CPU and I/O device yet,
 			// we let the process leave the system immediately, for now.
-			memory.processCompleted(p);
+			cpu.addProcess(p);
+			if(!cpu.isCpuBusy()){
+				switchProcess();
+				flushMemoryQueue();
+
+				// Check for more free memory
+				p = memory.checkMemory(clock);
+			}
+
+			//memory.processCompleted(p);
 			// Try to use the freed memory:
-			flushMemoryQueue();
+
 			// Update statistics
 			p.updateStatistics(statistics);
 
-			// Check for more free memory
-			p = memory.checkMemory(clock);
 		}
 	}
 
@@ -153,6 +168,10 @@ public class Simulator implements Constants
 	 * Simulates a process switch.
 	 */
 	private void switchProcess() {
+		Event nextEvent = cpu.switchProcess(clock);
+		eventQueue.insertEvent(nextEvent);
+
+
 
 
 	}
@@ -161,7 +180,15 @@ public class Simulator implements Constants
 	 * Ends the active process, and deallocates any resources allocated to it.
 	 */
 	private void endProcess() {
-		// Incomplete
+		Process endedProcess  = cpu.popRunningProcess(clock);
+		endedProcess.updateStatistics(statistics);
+		memory.processCompleted(endedProcess);
+
+
+			if(!cpu.isBusy()){
+				switchProcess();
+			}
+
 	}
 
 	/**
@@ -169,7 +196,18 @@ public class Simulator implements Constants
 	 * perform an I/O operation.
 	 */
 	private void processIoRequest() {
-		// Incomplete
+		// Pop the current running process from the CPU.
+		Process runningProcess = cpu.popRunningProcess(clock);
+
+		// Push the process to the IO queue, and determine the next event for the process.
+		Event nextEvent = io.pushProcess(runningProcess, clock);
+
+		// Add the returned event to the event queue.
+		eventQueue.insertEvent(nextEvent);
+
+		// Switch to a new process if the CPU is free.
+		if (! cpu.isCpuBusy())
+			switchProcess();
 	}
 
 	/**
@@ -177,9 +215,20 @@ public class Simulator implements Constants
 	 * is done with its I/O operation.
 	 */
 	private void endIoOperation() {
-		// Incomplete
-	}
+		// Pop the finished IO process and push it back to the CPU queue.
+		Process finishedIoProcess = io.endIoOperation(clock);
+		cpu.addProcess(finishedIoProcess);
 
+		// Try to start a new IO access for the next process in the IO queue.
+		Event nextEvent = io.startIoAccess(clock);
+
+		// Add the returned event to the event queue.
+		eventQueue.insertEvent(nextEvent);
+
+		// Switch to a new process if the CPU is free.
+		if (! cpu.isCpuBusy())
+			switchProcess();
+	}
 	/**
 	 * Reads a number from the an input reader.
 	 * @param reader	The input reader from which to read a number.
